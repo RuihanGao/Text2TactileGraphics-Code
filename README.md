@@ -4,7 +4,7 @@
 [Ruihan Gao\*](https://ruihangao.github.io/), [Joonghyuk Shin\*](https://joonghyuk.com/), [Ava Pun](https://avapun.com/), [Jaesik Park](https://jaesik.info/), [Wenzhen Yuan](https://siebelschool.illinois.edu/about/people/all-faculty/yuanwz), and [Jun-Yan Zhu](https://www.cs.cmu.edu/~junyanz/)  
 Carnegie Mellon University · Seoul National University · University of Illinois Urbana-Champaign  
 
-![arXiv](https://img.shields.io/badge/arXiv-2606.00000-b31b1b.svg)
+[![arXiv](https://img.shields.io/badge/arXiv-2607.22674-b31b1b.svg)](https://arxiv.org/abs/2607.22674)
 [![Project Page](https://img.shields.io/badge/Project_Page-Website-blue)](https://ruihangao.github.io/Text2TactileGraphics/)
 [![Checkpoints](https://img.shields.io/badge/Hugging_Face-Checkpoints-yellow)](https://huggingface.co/alex4727/text2tactilegraphics_ckpt)
 [![Dataset](https://img.shields.io/badge/Hugging_Face-Dataset-yellow)](https://huggingface.co/datasets/alex4727/text2tactilegraphics_data)
@@ -172,7 +172,7 @@ If you find this work useful, please cite:
 @article{gao2026text2tactilegraphics,
   title={Text-based Tactile Graphics Generation for the Visually Impaired},
   author={Gao, Ruihan and Shin, Joonghyuk and Pun, Ava and Park, Jaesik and Yuan, Wenzhen and Zhu, Jun-Yan},
-  journal={arXiv preprint arXiv:2606.00000},
+  journal={arXiv preprint arXiv:2607.22674},
   year={2026}
 }
 ```
