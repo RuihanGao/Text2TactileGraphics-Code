@@ -3,7 +3,7 @@
 import logging
 from collections.abc import Callable
 from datetime import datetime
-from functools import cache
+from functools import cached_property
 from pathlib import Path
 from typing import Literal
 
@@ -53,31 +53,51 @@ class AppState:
 
     # ----------------------------------------------------------------- lazy loaders
 
-    @cache
     def get_seg_engine(self) -> SegmentationEngine:
+        return self._seg_engine
+
+    @cached_property
+    def _seg_engine(self) -> SegmentationEngine:
         return SegmentationEngine()
 
-    @cache
     def get_texture_gen(self) -> TextureGenerator:
+        return self._texture_gen
+
+    @cached_property
+    def _texture_gen(self) -> TextureGenerator:
         return TextureGenerator()
 
-    @cache
     def get_geom_estimator(self) -> GeometryEstimator:
+        return self._geom_estimator
+
+    @cached_property
+    def _geom_estimator(self) -> GeometryEstimator:
         return GeometryEstimator()
 
-    @cache
     def get_base_gen(self) -> BaseImageGenerator:
+        return self._base_gen
+
+    @cached_property
+    def _base_gen(self) -> BaseImageGenerator:
         return BaseImageGenerator()
 
-    @cache
     def get_tiling_gen(
         self, method: TilingMethod
     ) -> IntraTilePatchGenerator | InterTilePatchGenerator | TiledDiffusion:
-        if method == "intra_tile_inpainting":
-            return IntraTilePatchGenerator()
-        if method == "inter_tile_inpainting":
-            return InterTilePatchGenerator()
-        return TiledDiffusion()
+        return self._tiling_gens[method]
+
+    @cached_property
+    def _tiling_gens(
+        self,
+    ) -> dict[
+        TilingMethod,
+        IntraTilePatchGenerator | InterTilePatchGenerator | TiledDiffusion,
+    ]:
+        return {
+            "intra_tile_inpainting": IntraTilePatchGenerator(),
+            "inter_tile_inpainting": InterTilePatchGenerator(),
+            "tiled_diffusion": TiledDiffusion(),
+        }
 
     # ----------------------------------------------------------------- intermediate-results saving
 
@@ -85,7 +105,9 @@ class AppState:
         """Resolve `filename` under <output_dir>/<session_id>/, creating dirs."""
         if self.session_id is None:
             self.session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
-        save_dir = Path(self.output_dir) / self.session_id
+        session_id = self.session_id
+        assert session_id is not None
+        save_dir = Path(self.output_dir) / session_id
         save_dir.mkdir(parents=True, exist_ok=True)
         return save_dir / filename
 
