@@ -58,6 +58,55 @@ terminal.
 | `HF_HOME`                   | Override default location for Hugging Face model weights    | `~/.cache/huggingface`                   | Optional                        |
 | `DIFFSYNTH_MODEL_BASE_PATH` | Override default location for DiffSynth model weights       | `./models` relative to the current shell | Optional                        |
 
+## Text-to-Texture Model Training
+
+We delegate Qwen-Image LoRA training to [DiffSynth-Studio](https://github.com/modelscope/diffsynth-studio). The training data is released on HuggingFace in the CSV format expected by DiffSynth:
+
+```bash
+export TEXT2TACTILEGRAPHICS_TEXTURE_DATA=/path/to/text2tactilegraphics_data
+
+uv run --frozen hf download alex4727/text2tactilegraphics_data \
+  --repo-type dataset \
+  --local-dir "$TEXT2TACTILEGRAPHICS_TEXTURE_DATA"
+```
+
+The downloaded dataset should have this layout:
+
+```text
+$TEXT2TACTILEGRAPHICS_TEXTURE_DATA/
+  tactile_data.csv
+  images/
+    nb_000000.png
+    nbp_000000.png
+    real_000000.jpg
+```
+
+Then run training from the DiffSynth-Studio repository. These instructions are checked against DiffSynth-Studio commit `83eece4faf52ab392ca707ad643ab62ca2f58773`:
+
+```bash
+accelerate launch examples/qwen_image/model_training/train.py \
+  --dataset_base_path "$TEXT2TACTILEGRAPHICS_TEXTURE_DATA" \
+  --dataset_metadata_path "$TEXT2TACTILEGRAPHICS_TEXTURE_DATA/tactile_data.csv" \
+  --data_file_keys image \
+  --max_pixels 1048576 \
+  --model_id_with_origin_paths "Qwen/Qwen-Image:transformer/diffusion_pytorch_model*.safetensors,Qwen/Qwen-Image:text_encoder/model*.safetensors,Qwen/Qwen-Image:vae/diffusion_pytorch_model.safetensors" \
+  --learning_rate 1e-4 \
+  --num_epochs 100 \
+  --remove_prefix_in_ckpt "pipe.dit." \
+  --output_path /path/to/output/tactile_qwen_lora \
+  --lora_base_model "dit" \
+  --lora_target_modules "to_q,to_k,to_v,add_q_proj,add_k_proj,add_v_proj,to_out.0,to_add_out,img_mlp.net.2,img_mod.1,txt_mlp.net.2,txt_mod.1" \
+  --lora_rank 32 \
+  --use_gradient_checkpointing \
+  --dataset_num_workers 8 \
+  --find_unused_parameters \
+  --save_steps 100 \
+  --enable_wandb_log \
+  --gradient_accumulation_steps 4
+```
+
+Configure `accelerate` for your local hardware before launching (e.g., # of gpus/processes). Our released texture LoRA was trained on 8x A100 80GB GPUs with per-gpu batch size of 1 and gradient accumulation 4, giving an effective batch size of 32. We stopped at 3,000 steps after validation; you can stop earlier or later based on your own validation samples. 
+
 ## Development
 
 ### Project structure
@@ -115,65 +164,16 @@ can change this output directory with
 uv run --frozen pytest -q tests --basetemp <output_directory>
 ```
 
-## Text-to-Texture Model Training
-
-We delegate Qwen-Image LoRA training to [DiffSynth-Studio](https://github.com/modelscope/diffsynth-studio). The training data is released on HuggingFace in the CSV format expected by DiffSynth:
-
-```bash
-export TEXT2TACTILEGRAPHICS_TEXTURE_DATA=/path/to/text2tactilegraphics_data
-
-uv run --frozen hf download alex4727/text2tactilegraphics_data \
-  --repo-type dataset \
-  --local-dir "$TEXT2TACTILEGRAPHICS_TEXTURE_DATA"
-```
-
-The downloaded dataset should have this layout:
-
-```text
-$TEXT2TACTILEGRAPHICS_TEXTURE_DATA/
-  tactile_data.csv
-  images/
-    nb_000000.png
-    nbp_000000.png
-    real_000000.jpg
-```
-
-Then run training from the DiffSynth-Studio repository. These instructions are checked against DiffSynth-Studio commit `83eece4faf52ab392ca707ad643ab62ca2f58773`:
-
-```bash
-accelerate launch examples/qwen_image/model_training/train.py \
-  --dataset_base_path "$TEXT2TACTILEGRAPHICS_TEXTURE_DATA" \
-  --dataset_metadata_path "$TEXT2TACTILEGRAPHICS_TEXTURE_DATA/tactile_data.csv" \
-  --data_file_keys image \
-  --max_pixels 1048576 \
-  --model_id_with_origin_paths "Qwen/Qwen-Image:transformer/diffusion_pytorch_model*.safetensors,Qwen/Qwen-Image:text_encoder/model*.safetensors,Qwen/Qwen-Image:vae/diffusion_pytorch_model.safetensors" \
-  --learning_rate 1e-4 \
-  --num_epochs 100 \
-  --remove_prefix_in_ckpt "pipe.dit." \
-  --output_path /path/to/output/tactile_qwen_lora \
-  --lora_base_model "dit" \
-  --lora_target_modules "to_q,to_k,to_v,add_q_proj,add_k_proj,add_v_proj,to_out.0,to_add_out,img_mlp.net.2,img_mod.1,txt_mlp.net.2,txt_mod.1" \
-  --lora_rank 32 \
-  --use_gradient_checkpointing \
-  --dataset_num_workers 8 \
-  --find_unused_parameters \
-  --save_steps 100 \
-  --enable_wandb_log \
-  --gradient_accumulation_steps 4
-```
-
-Configure `accelerate` for your local hardware before launching (e.g., # of gpus/processes). Our released texture LoRA was trained on 8x A100 80GB GPUs with per-gpu batch size of 1 and gradient accumulation 4, giving an effective batch size of 32. We stopped at 3,000 steps after validation; you can stop earlier or later based on your own validation samples. 
-
 ## Citation
 
 If you find this work useful, please cite:
 
 ```bibtex
-@article{gao2026text2tactilegraphics,
-  title={Text-based Tactile Graphics Generation for the Visually Impaired},
-  author={Gao, Ruihan and Shin, Joonghyuk and Pun, Ava and Park, Jaesik and Yuan, Wenzhen and Zhu, Jun-Yan},
-  journal={arXiv preprint arXiv:2607.22674},
-  year={2026}
+@inproceedings{gao2026text2tactilegraphics,
+  title     = {Text-based Tactile Graphics Generation for the Visually Impaired},
+  author    = {Gao, Ruihan and Shin, Joonghyuk and Pun, Ava and Park, Jaesik and Yuan, Wenzhen and Zhu, Jun-Yan},
+  booktitle = {European Conference on Computer Vision (ECCV)},
+  year      = {2026}
 }
 ```
 
