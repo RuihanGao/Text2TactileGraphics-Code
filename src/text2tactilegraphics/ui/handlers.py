@@ -7,11 +7,15 @@ import numpy as np
 from PIL import Image
 
 from text2tactilegraphics import TexturedSegment
-from text2tactilegraphics.generation.base_image_generation import BaseImageModel
+from text2tactilegraphics.generation.base_image_generation import (
+    BaseImageModel,
+    BaseImageSteps,
+)
 from text2tactilegraphics.generation.segmentation import (
     apply_mask_overlay,
     draw_points_on_image,
 )
+from text2tactilegraphics.generation.texture_generation import TextureSteps
 from text2tactilegraphics.generation.utils import (
     depth_to_image,
     displacement_to_image,
@@ -82,7 +86,7 @@ def proceed_to_step4(tileable_patch_img: Image.Image | None) -> gr.Tabs:
 def generate_base_image(
     prompt: str,
     model: BaseImageModel,
-    steps: int,
+    steps: BaseImageSteps,
     seed: int,
     app_state: AppState,
 ) -> Image.Image:
@@ -220,7 +224,7 @@ def get_selected_mask_and_image(
 
 
 def generate_texture_image(
-    prompt: str, steps: int, seed: int, app_state: AppState
+    prompt: str, steps: TextureSteps, seed: int, app_state: AppState
 ) -> Image.Image:
     """Generate texture image + geometry (depth or normal) for the current segment."""
     if not prompt.strip():
@@ -262,7 +266,7 @@ def generate_texture_geometry(
 
 def generate_tiled_preview(
     tileable_image: Image.Image,
-) -> tuple[Image.Image, Image.Image]:
+) -> Image.Image:
     try:
         return tile_image(tileable_image, 3, 3)
     except Exception as e:
@@ -335,7 +339,7 @@ def _prepare_for_tiling(
     filtered = apply_high_pass_to_normal_map(
         geometry_img, freq_threshold=freq_threshold, method=method
     )
-    return filtered  # type:ignore
+    return filtered
 
 
 # =============================================================================
@@ -465,10 +469,11 @@ def save_braille(
 ) -> list | dict:
     if not text.strip():
         raise gr.Error("Enter braille text first")
-    if box[1] is None:
+    start, end = box
+    if start is None or end is None:
         raise gr.Error("Draw a box on the canvas first")
 
-    (x1, y1), (x2, y2) = box
+    (x1, y1), (x2, y2) = start, end
     braille_placements.append(
         BraillePlacement(
             text=text.strip(),
@@ -505,34 +510,31 @@ def generate_final_mesh(
     try:
         segments_to_apply = [seg for seg in segments if seg.enabled]
         is_standard = braille_mode == "standard"
-        standard_braille_text = (
-            standard_braille_text.strip() if standard_braille_text else None
-        )
-
-        common_kwargs = dict(
-            segments=segments_to_apply or None,
-            flatten_plate=flatten_plate,
-            plate_thickness=plate_thickness,
-            normal_format=normal_format,
-        )
+        braille_text = standard_braille_text.strip() if standard_braille_text else None
 
         if is_standard:
             glb_path = create_tactile_graphic(
                 base_img,
-                standard_braille_text=standard_braille_text,
+                segments=segments_to_apply or None,
+                flatten_plate=flatten_plate,
+                plate_thickness=plate_thickness,
+                normal_format=normal_format,
+                standard_braille_text=braille_text,
                 standard_braille_plate_size=plate_size,
                 standard_braille_flat_top_ratio=flat_top_ratio,
                 standard_braille_bottom_padding=bottom_padding,
-                **common_kwargs,
             )
             num_applied = 1
         else:
             braille_to_apply = [bp for bp in braille_placements if bp.enabled]
             glb_path = create_tactile_graphic(
                 base_img,
+                segments=segments_to_apply or None,
+                flatten_plate=flatten_plate,
+                plate_thickness=plate_thickness,
+                normal_format=normal_format,
                 braille_placements=braille_to_apply or None,
                 braille_dot_height=dot_height,
-                **common_kwargs,
             )
             num_applied = len(braille_to_apply)
 

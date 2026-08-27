@@ -416,7 +416,9 @@ def render_mesh_to_image(
 ) -> Image.Image:
     """Render a PyVista PolyData mesh off-screen and return a PIL Image."""
     plotter = pv.Plotter(off_screen=True, window_size=list(size))
-    plotter.set_background(background)
+    # PyVista wraps several plotter methods with `functools.wraps`, which hides
+    # the bound-method signature from the type checker
+    plotter.set_background(background)  # ty: ignore[invalid-argument-type]
     plotter.add_mesh(
         mesh, color="tan", smooth_shading=True, show_edges=False, lighting=True
     )
@@ -428,8 +430,11 @@ def render_mesh_to_image(
     else:
         plotter.camera_position = camera_position
 
-    plotter.reset_camera()
+    plotter.reset_camera()  # ty: ignore[missing-argument]
     try:
-        return Image.fromarray(plotter.screenshot(return_img=True))  # type:ignore
+        # `screenshot` always returns an array when `return_img=True`
+        return Image.fromarray(
+            plotter.screenshot(return_img=True)  # ty: ignore[invalid-argument-type]
+        )
     finally:
         plotter.close()

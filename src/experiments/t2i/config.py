@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING, TypedDict
 
 from text2tactilegraphics.config import (
     DEFAULT_PLATE_IMAGE,
@@ -16,6 +17,26 @@ from text2tactilegraphics.config import (
 
 STYLE_PROMPT_PREFIX = _STYLE_PROMPT_PREFIX
 STYLE_PROMPT_SUFFIX = _STYLE_PROMPT_SUFFIX
+
+if TYPE_CHECKING:
+    from text2tactilegraphics.generation.base_image_generation import (
+        BaseImageModel,
+        BaseImageSteps,
+    )
+
+
+class T2IBaseline(TypedDict):
+    model: BaseImageModel
+    steps: BaseImageSteps | None  # `None` for API models, which fix their own budget
+    display_name: str
+    description: str
+
+
+class PlateCondition(TypedDict):
+    display_name: str
+    plate_image: str | None
+    suffix: str
+
 
 T2I_DIR = Path(__file__).resolve().parent
 OUTPUT_DIR = T2I_DIR / "output"
@@ -33,7 +54,7 @@ STYLE_PROMPT_SUFFIX_NO_PLATE = (
     "Viewed from directly above."
 )
 
-T2I_BASELINES = {
+T2I_BASELINES: dict[str, T2IBaseline] = {
     "qwen_edit_4step": {
         "model": "qwen_edit",
         "steps": 4,
@@ -54,7 +75,7 @@ T2I_BASELINES = {
     },
 }
 
-PLATE_CONDITIONS = {
+PLATE_CONDITIONS: dict[str, PlateCondition] = {
     "without_plate": {
         "display_name": "No",
         "plate_image": None,

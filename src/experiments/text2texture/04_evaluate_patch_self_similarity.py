@@ -7,7 +7,7 @@ import re
 from itertools import combinations
 from pathlib import Path
 
-import lpips
+import lpips  # ty: ignore[unresolved-import] (install separately: `uv pip install lpips`)
 import numpy as np
 import torch
 from PIL import Image

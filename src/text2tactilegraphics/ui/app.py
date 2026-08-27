@@ -3,7 +3,12 @@
 import gradio as gr
 
 from text2tactilegraphics import TexturedSegment
-from text2tactilegraphics.config import debug_enabled, get_total_gpus
+from text2tactilegraphics.config import (
+    GeometryType,
+    VRAMMode,
+    debug_enabled,
+    get_total_gpus,
+)
 from text2tactilegraphics.generation.utils import mask_to_image
 from text2tactilegraphics.geometry.braille import (
     STANDARD_DOT_HEIGHT,
@@ -165,9 +170,17 @@ def _build_runtime_settings(app_state: AppState) -> None:
     # range to {0} so no invalid index can be entered.
     n_gpus = max(get_total_gpus(), 1)
     max_gpu_id = n_gpus - 1
-    gpu_kwargs = dict(
-        value=0, precision=0, minimum=0, maximum=max_gpu_id, step=1, scale=1
-    )
+
+    def gpu_number(label: str, value: int = 0) -> gr.Number:
+        return gr.Number(
+            label=label,
+            value=value,
+            precision=0,
+            minimum=0,
+            maximum=max_gpu_id,
+            step=1,
+            scale=1,
+        )
 
     with gr.Group():
         gr.Markdown(
@@ -175,21 +188,15 @@ def _build_runtime_settings(app_state: AppState) -> None:
             padding=True,
         )
         with gr.Row():
-            gpu_base_edit = gr.Number(label="Base (if Qwen-Image-Edit)", **gpu_kwargs)
-            gpu_moge = gr.Number(label="MoGe", **gpu_kwargs)
-            gpu_sam = gr.Number(label="SAM3", **gpu_kwargs)
-            gpu_qwen = gr.Number(
-                label="Texture (Qwen Image)",
-                **{**gpu_kwargs, "value": min(1, max_gpu_id)},
-            )
-            gpu_tile = gr.Number(
-                label="Tileable (Qwen Image / SDXL)",
-                **{**gpu_kwargs, "value": min(2, max_gpu_id)},
-            )
+            gpu_base_edit = gpu_number("Base (if Qwen-Image-Edit)")
+            gpu_moge = gpu_number("MoGe")
+            gpu_sam = gpu_number("SAM3")
+            gpu_qwen = gpu_number("Texture (Qwen Image)", min(1, max_gpu_id))
+            gpu_tile = gpu_number("Tileable (Qwen Image / SDXL)", min(2, max_gpu_id))
 
     def apply_settings(
-        vram: str,
-        geometry_type: str,
+        vram: VRAMMode,
+        geometry_type: GeometryType,
         g_base_edit: float,
         g_moge: float,
         g_sam: float,

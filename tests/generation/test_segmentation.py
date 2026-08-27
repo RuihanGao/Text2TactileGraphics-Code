@@ -62,7 +62,7 @@ class TestApplyMaskOverlay:
         mask = ((x - w / 2) / (w / 4)) ** 2 + ((y - h / 2) / (h / 4)) ** 2 < 1
         out = apply_mask_overlay(
             base,
-            mask,  # type:ignore
+            mask,
             color=(255, 100, 100),
             opacity=0.5,
         )

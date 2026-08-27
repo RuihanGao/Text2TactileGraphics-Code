@@ -3,6 +3,18 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any, NotRequired, TypedDict
+
+
+class TilingBaseline(TypedDict):
+    stage: int
+    display_name: str
+    description: str
+    method: str
+    requires_gpu: bool
+    # Extra keyword arguments for the baseline's tiling call, if any.
+    params: NotRequired[dict[str, Any]]
+
 
 TILING_DIR = Path(__file__).resolve().parent
 OUTPUT_DIR = TILING_DIR / "output"
@@ -15,7 +27,7 @@ TARGET_SIZE = 512
 DEFAULT_SEED = 42
 DEFAULT_HIGHPASS_FREQ = 120
 
-TILING_BASELINES = {
+TILING_BASELINES: dict[str, TilingBaseline] = {
     "resize": {
         "stage": 1,
         "display_name": "Resize",

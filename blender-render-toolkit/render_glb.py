@@ -15,8 +15,9 @@ import math
 import os
 import sys
 
-import bpy
-from mathutils import Matrix, Vector
+# `bpy` and `mathutils` ship with Blender's bundled Python, not resolvable from the project venv
+import bpy  # ty: ignore[unresolved-import]
+from mathutils import Matrix, Vector  # ty: ignore[unresolved-import]
 
 
 def get_args():

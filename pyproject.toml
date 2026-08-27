@@ -37,6 +37,7 @@ dev = [
     "pytest-regressions",
     "ruff",
     "scipy-stubs",
+    "ty",
 ]
 
 [build-system]
@@ -55,6 +56,11 @@ explicit = true
 
 [tool.ruff.lint]
 extend-select = ["I"]
+
+[tool.ty.src]
+exclude = [
+    "src/text2tactilegraphics/generation/tiled_diffusion/tiled_diffusion_pipeline.py", # Vendored upstream code
+]
 
 [tool.pytest.ini_options]
 markers = [

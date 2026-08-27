@@ -134,7 +134,8 @@ class ClipScorer:
     ) -> None:
         self.torch = torch
         self.device = device
-        self.model = CLIPModel.from_pretrained(model_name).to(device)
+        # transformers wraps `.to()` with `functools.wraps`, hiding the bound-method signature from the type checker
+        self.model = CLIPModel.from_pretrained(model_name).to(device)  # ty: ignore[invalid-argument-type]
         self.model.eval()
         self.processor = CLIPProcessor.from_pretrained(model_name)
 

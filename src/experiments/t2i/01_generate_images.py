@@ -90,6 +90,10 @@ def generate_images(
                     print(f"[{count}/{total}] GEN {out_path.relative_to(run_dir)}")
                     try:
                         if model == "qwen_edit":
+                            if steps is None:
+                                raise ValueError(
+                                    f"Baseline {baseline_name!r} must set a step count"
+                                )
                             image = generator.generate(
                                 prompt=prompt,
                                 model=model,

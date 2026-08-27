@@ -47,7 +47,7 @@ def _make_image(h: int = 64, w: int = 64) -> Image.Image:
 
 
 def _make_mask(val: float = 0.5, h: int = 64, w: int = 64) -> np.ndarray:
-    return np.eye(h, w) * val  # type: ignore
+    return np.eye(h, w) * val
 
 
 def _make_evt_mock(x: int, y: int) -> Mock:
@@ -167,9 +167,11 @@ class TestGenerateBaseImage:
         return _make_base_gen_mock(generated_img)
 
     @pytest.fixture
-    def app_state(self, mock_base_gen: Mock) -> AppState:
+    def app_state(
+        self, mock_base_gen: Mock, monkeypatch: pytest.MonkeyPatch
+    ) -> AppState:
         app_state = AppState()
-        app_state.get_base_gen = lambda: mock_base_gen
+        monkeypatch.setattr(app_state, "get_base_gen", lambda: mock_base_gen)
         return app_state
 
     def test_should_return_image_from_generator_on_success(
@@ -257,9 +259,11 @@ class TestSegmentWithText:
         return _make_seg_engine_mock()
 
     @pytest.fixture
-    def app_state(self, mock_seg_engine: Mock) -> AppState:
+    def app_state(
+        self, mock_seg_engine: Mock, monkeypatch: pytest.MonkeyPatch
+    ) -> AppState:
         app_state = AppState()
-        app_state.get_seg_engine = lambda: mock_seg_engine
+        monkeypatch.setattr(app_state, "get_seg_engine", lambda: mock_seg_engine)
         return app_state
 
     def test_should_return_mask_and_preview_images_on_success(
@@ -270,7 +274,9 @@ class TestSegmentWithText:
         assert isinstance(mask, np.ndarray)
         assert isinstance(overlay_img, Image.Image)
 
-    def test_should_return_union_of_all_candidate_masks(self, app_state: AppState):
+    def test_should_return_union_of_all_candidate_masks(
+        self, app_state: AppState, monkeypatch: pytest.MonkeyPatch
+    ):
         # Three disjoint masks — the union should light up all three regions.
         a = np.zeros((4, 4), dtype=bool)
         a[0, 0] = True
@@ -278,8 +284,10 @@ class TestSegmentWithText:
         b[1, 1] = True
         c = np.zeros((4, 4), dtype=bool)
         c[2, 2] = True
-        app_state.get_seg_engine = lambda: _make_seg_engine_mock(
-            [(a, 0.2), (b, 0.95), (c, 0.5)]
+        monkeypatch.setattr(
+            app_state,
+            "get_seg_engine",
+            lambda: _make_seg_engine_mock([(a, 0.2), (b, 0.95), (c, 0.5)]),
         )
 
         mask, _ = segment_with_text(_make_image(), "x", app_state)
@@ -304,9 +312,11 @@ class TestSegmentWithText:
         mock_seg_engine.segment_with_text.assert_not_called()
 
     def test_should_raise_gradio_error_when_engine_returns_no_segments(
-        self, app_state: AppState
+        self, app_state: AppState, monkeypatch: pytest.MonkeyPatch
     ):
-        app_state.get_seg_engine = lambda: _make_seg_engine_mock(segments=[])
+        monkeypatch.setattr(
+            app_state, "get_seg_engine", lambda: _make_seg_engine_mock(segments=[])
+        )
 
         with pytest.raises(gr.Error, match="No segments found"):
             segment_with_text(_make_image(), "dolphin", app_state)
@@ -330,9 +340,11 @@ class TestGenerateTextureImage:
         return _make_texture_gen_mock(generated_img)
 
     @pytest.fixture
-    def app_state(self, mock_texture_gen: Mock) -> AppState:
+    def app_state(
+        self, mock_texture_gen: Mock, monkeypatch: pytest.MonkeyPatch
+    ) -> AppState:
         app_state = AppState()
-        app_state.get_texture_gen = lambda: mock_texture_gen
+        monkeypatch.setattr(app_state, "get_texture_gen", lambda: mock_texture_gen)
         return app_state
 
     def test_should_return_image_from_generator_on_success(
@@ -363,9 +375,11 @@ class TestGenerateTextureGeometry:
         return _make_geom_estimator_mock()
 
     @pytest.fixture
-    def app_state(self, mock_geometry: Mock) -> AppState:
+    def app_state(
+        self, mock_geometry: Mock, monkeypatch: pytest.MonkeyPatch
+    ) -> AppState:
         app_state = AppState()
-        app_state.get_geom_estimator = lambda: mock_geometry
+        monkeypatch.setattr(app_state, "get_geom_estimator", lambda: mock_geometry)
         return app_state
 
     def test_should_return_geometry_array_and_preview_image_for_normal_mode(
@@ -449,9 +463,11 @@ class TestMakeTileable:
         return _make_tiling_gen_mock(tileable_patch)
 
     @pytest.fixture
-    def app_state(self, mock_tiling_gen: Mock) -> AppState:
+    def app_state(
+        self, mock_tiling_gen: Mock, monkeypatch: pytest.MonkeyPatch
+    ) -> AppState:
         app_state = AppState()
-        app_state.get_tiling_gen = lambda method: mock_tiling_gen
+        monkeypatch.setattr(app_state, "get_tiling_gen", lambda method: mock_tiling_gen)
         app_state.config.geometry_type = "normal"
         return app_state
 

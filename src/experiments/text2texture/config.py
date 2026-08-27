@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal, TypedDict
 
 from text2tactilegraphics.config import (
     TEXTURE_PROMPT_TEMPLATE as _TEXTURE_PROMPT_TEMPLATE,
@@ -10,11 +11,20 @@ from text2tactilegraphics.config import (
 
 TEXTURE_PROMPT_TEMPLATE = _TEXTURE_PROMPT_TEMPLATE
 
+
+class Text2TextureBaseline(TypedDict):
+    model: Literal["qwen", "nano_banana_pro"]
+    steps: int | None  # `None` for API models, which fix their own step budget
+    texture_lora: str | None
+    display_name: str
+    description: str
+
+
 TEXT2TEXTURE_DIR = Path(__file__).resolve().parent
 OUTPUT_DIR = TEXT2TEXTURE_DIR / "output"
 PROMPTS_PATH = TEXT2TEXTURE_DIR / "prompts.json"
 
-TEXT2TEXTURE_BASELINES = {
+TEXT2TEXTURE_BASELINES: dict[str, Text2TextureBaseline] = {
     "qwen_no_lora_4step": {
         "model": "qwen",
         "steps": 4,

@@ -129,12 +129,17 @@ def generate_textures(
                 print(f"[{count}/{total}] GEN {out_path.relative_to(run_dir)}")
                 try:
                     if baseline["model"] == "qwen":
+                        steps = baseline["steps"]
+                        if steps is None:
+                            raise ValueError(
+                                f"Baseline {baseline_name!r} must set a step count"
+                            )
                         if qwen_generator is None:
                             qwen_generator = BenchmarkTextureGenerator(mm, config)
                         image = qwen_generator.generate(
                             prompt,
                             texture_lora=baseline["texture_lora"],
-                            steps=baseline["steps"],
+                            steps=steps,
                             seed=seed,
                         )
                     else:
