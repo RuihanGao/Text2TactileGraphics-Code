@@ -9,7 +9,7 @@ dependencies = [
     "diffusers",
     "flash-attn",
     "google-genai",
-    "gradio>=6,<6.11", # Gradio tab switching issue in 6.11: https://github.com/gradio-app/gradio/issues/13198
+    "gradio",
     "moge",
     "numpy",
     "nvidia-cuda-runtime-cu12",
