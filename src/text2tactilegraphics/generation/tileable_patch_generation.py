@@ -6,7 +6,11 @@ from text2tactilegraphics.config import (
     Config,
     global_config,
 )
-from text2tactilegraphics.generation.models import ModelManager, global_model_manager
+from text2tactilegraphics.generation.models import (
+    ModelManager,
+    global_model_manager,
+    qwen_stage,
+)
 from text2tactilegraphics.generation.utils import (
     SWAP_DIRECTION,
     as_pil,
@@ -30,6 +34,7 @@ class IntraTilePatchGenerator:
         self.mm = model_manager or global_model_manager()
         self.config = config or global_config()
 
+    @qwen_stage("qwen_tiling")
     def make_tileable(
         self,
         image: Image.Image | np.ndarray,
@@ -82,6 +87,7 @@ class InterTilePatchGenerator:
         self.mm = model_manager or global_model_manager()
         self.config = config or global_config()
 
+    @qwen_stage("qwen_tiling")
     def make_tileable(
         self,
         image: Image.Image | np.ndarray,

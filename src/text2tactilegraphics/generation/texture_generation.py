@@ -10,6 +10,7 @@ from text2tactilegraphics.generation.models import (
     LoraManager,
     ModelManager,
     global_model_manager,
+    qwen_stage,
 )
 from text2tactilegraphics.generation.utils import center_crop_array
 
@@ -38,6 +39,7 @@ class TextureGenerator:
     def loras(self) -> LoraManager:
         return LoraManager(pipeline=self.qwen_pipeline, config=self.config)
 
+    @qwen_stage("qwen_texture")
     def generate(
         self,
         prompt: str,

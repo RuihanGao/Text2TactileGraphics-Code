@@ -91,6 +91,7 @@ def _build_gpu_assignments(default: dict[str, int]) -> dict[str, int]:
 
 # Shared `Literal` aliases used across the codebase.
 VRAMMode = Literal["48gb", "80gb"]
+ModelLifecycle = Literal["cached", "single_a100_80gb"]
 GeometryType = Literal["normal", "depth"]
 
 
@@ -232,6 +233,11 @@ class Config:
     # VRAM mode — auto-detected from device 0's total memory at construction.
     vram_mode: VRAMMode = field(default_factory=_detect_vram_mode)
 
+    # Explicit deployment policy; research configurations keep natural caching.
+    model_lifecycle: ModelLifecycle = field(
+        default_factory=lambda: os.environ.get("TEXT2TACTILEGRAPHICS_MODEL_LIFECYCLE", "cached")
+    )
+
     # Whether to use normal or depth estimation
     geometry_type: GeometryType = "normal"
 
@@ -264,6 +270,19 @@ class Config:
         default_factory=lambda: _build_gpu_assignments(GPU_ASSIGNMENTS)
     )
 
+    def __post_init__(self) -> None:
+        self.validate_model_lifecycle()
+
+    def validate_model_lifecycle(self) -> None:
+        """Reject incompatible settings instead of falling back to CPU offload."""
+        if self.model_lifecycle not in ("cached", "single_a100_80gb"):
+            raise ValueError(f"Unknown model lifecycle: {self.model_lifecycle!r}")
+        if self.model_lifecycle == "single_a100_80gb":
+            if self.vram_mode != "80gb":
+                raise ValueError("single_a100_80gb requires true 80gb VRAM mode")
+            if any(device != 0 for device in self.gpu_assignments.values()):
+                raise ValueError("single_a100_80gb requires all model roles on cuda:0")
+
     def get_device(self, model_name: str) -> str:
         """Return the device string ('cuda:N' or 'cpu') for `model_name`."""
         gpu_id = self.gpu_assignments.get(model_name, 0)
@@ -271,6 +290,7 @@ class Config:
 
     def get_qwen_vram_config(self, device: str) -> dict:
         """Return the Qwen VRAM config with 'cuda' placeholders bound to `device`."""
+        self.validate_model_lifecycle()
         cfg = QWEN_VRAM_CONFIGS[self.vram_mode].copy()
         for key in _VRAM_DEVICE_KEYS:
             if cfg[key] == "cuda":

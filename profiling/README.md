@@ -100,3 +100,85 @@ matrix. The 40-step comparison uses one cold and one warm run, versus one cold
 and three warm runs for each completed 4-step series. Host cgroup telemetry was
 captured separately during this profiling session; GPU telemetry is automatic
 for every invocation of the harness.
+
+## True-80GB single-GPU validation
+
+`validate_single_gpu.py` extends this harness by importing its `Recorder`, CUDA
+instrumentation, and cleanup functions. It invokes the released UI handlers;
+application source and advanced Gradio behavior are unchanged. It requires exactly
+one visible GPU and explicitly sets `80gb` mode. The settings remain 1024×1024,
+4-step base/texture, seed 42, and the released 512×512 cropped-normal / 10-step
+intra-tile / high-pass / displacement / Braille defaults.
+
+The dolphin uses base prompt `a dolphin with wings`, segmentation `dolphin`, and
+texture `an avocado skin`. `--example lamp` uses `lamp`, then saves two segments:
+`lamp base` / `tree bark` and `lamp shade` / `cloth_bag`, passing the accumulated
+list to final export. It does not collapse the regions or substitute sensor maps.
+
+Use a new output directory for every process:
+
+```bash
+.venv/bin/python profiling/validate_single_gpu.py --audit \
+  --output profiling/results/single-gpu-quality/dolphin-validation
+.venv/bin/python profiling/run_single_gpu_references.py
+.venv/bin/python profiling/validate_single_gpu.py --audit --reuse \
+  --output profiling/results/single-gpu-quality/dolphin-reuse-validation
+.venv/bin/python profiling/compare_single_gpu.py \
+  --candidate profiling/results/single-gpu-quality/dolphin-reuse-validation \
+  --references profiling/results/single-gpu-quality \
+  --output profiling/results/single-gpu-quality/equivalence-reuse.json
+.venv/bin/python profiling/validate_single_gpu.py --reuse --runs 4 \
+  --output profiling/results/single-gpu-quality/dolphin-performance
+.venv/bin/python profiling/validate_single_gpu.py --audit --example lamp \
+  --output profiling/results/single-gpu-quality/lamp-validation
+.venv/bin/python profiling/validate_single_gpu.py --audit --reuse --example lamp \
+  --output profiling/results/single-gpu-quality/lamp-reuse-validation
+.venv/bin/python profiling/compare_lifecycle_artifacts.py \
+  profiling/results/single-gpu-quality/lamp-validation \
+  profiling/results/single-gpu-quality/lamp-reuse-validation \
+  profiling/results/single-gpu-quality/lamp-lifecycle-artifacts.json
+.venv/bin/python profiling/aggregate_single_gpu.py
+```
+
+Run GPU commands **serially**. `--audit` captures live parameter dtype/device
+inventories, wrapper placements, actual pipeline arguments including defaults,
+resolved checkpoint files, LoRA scale and hotload behavior, initial noise hashes,
+each denoising update, and scheduler state. Audit hashing synchronizes/copies
+small inference tensors and walks modules, so use **no `--audit`** for latency
+measurements. Ordinary timing still synchronizes CUDA and measures Qwen inference
+separately from model loading. Original PNGs, masks, float normal maps, final GLB,
+1 Hz GPU traces, and exact harness copies are saved per process.
+
+`--reuse` is a profiling-only experiment: after base generation it unloads base
+Qwen normally. Texture generation loads the released Qwen-Image bundle and its
+LoRAs normally. The existing `LoraManager.apply([])` clears the hotloaded adapters;
+the clean bundle is then assigned to the tiling cache key. With multiple regions,
+it returns to the texture key and the existing generator reapplies the required
+LoRAs. It unloads Qwen after the last region and keeps SAM3/MoGe resident across
+requests. It asserts hotload support and empty adapter lists before tiling. This
+must be validated again if DiffSynth, checkpoints, presets, or adapter semantics
+change; it is not an application model-manager refactor.
+
+`quality_index.py DIRECTORY` creates an HTML index and a diagnostic contact-sheet
+figure. `render_quality_mesh.py MESH OUTPUT.png` renders the unchanged mesh with
+PyVista (requires a working EGL/OSMesa loader). Neither preview enters benchmark
+timing. Non-watertight exports remain diagnostics for this deployment task.
+
+## Application lifecycle validation
+
+`validate_application.py` constructs the real Gradio app and invokes its registered
+base/texture/normal/tiling/export callbacks, plus the released segmentation and
+save-segment handlers. It never installs a lifecycle policy or manually unloads
+models. Enable the application policy through its normal environment option:
+
+```bash
+TEXT2TACTILEGRAPHICS_MODEL_LIFECYCLE=single_a100_80gb uv run --frozen python profiling/validate_application.py --audit --output profiling/results/application-integration/dolphin-equivalence
+TEXT2TACTILEGRAPHICS_MODEL_LIFECYCLE=single_a100_80gb uv run --frozen python profiling/validate_application.py --runs 3 --output profiling/results/application-integration/dolphin-performance
+TEXT2TACTILEGRAPHICS_MODEL_LIFECYCLE=single_a100_80gb uv run --frozen python profiling/validate_application.py --example lamp --audit --output profiling/results/application-integration/lamp-equivalence
+uv run --frozen python profiling/compare_single_gpu.py --candidate profiling/results/application-integration/dolphin-equivalence --references profiling/results/single-gpu-quality --output profiling/results/application-integration/equivalence.json
+```
+
+Use new output directories for reruns. Audit hashing is excluded from the dedicated
+cold/two-warm performance series. Times include callback work, synchronized GPU
+operations, application-managed unloading, artifact writes and export checks;
+imports, browser/network transport and human interaction are excluded.

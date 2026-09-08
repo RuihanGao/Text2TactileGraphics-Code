@@ -1,5 +1,7 @@
 """Text2TactileGraphics Gradio UI — entry point + UI layout."""
 
+import logging
+
 import gradio as gr
 
 from text2tactilegraphics import TexturedSegment
@@ -8,6 +10,7 @@ from text2tactilegraphics.config import (
     VRAMMode,
     debug_enabled,
     get_total_gpus,
+    global_config,
 )
 from text2tactilegraphics.generation.utils import mask_to_image
 from text2tactilegraphics.geometry.braille import (
@@ -78,8 +81,17 @@ CSS = """
 # =============================================================================
 
 
+def _inference_queue() -> dict:
+    """Serialize GPU handlers across stages and sessions in single-A100 mode."""
+    if global_config().model_lifecycle == "single_a100_80gb":
+        return {"concurrency_id": "single_a100_80gb", "concurrency_limit": 1}
+    return {}
+
+
 def create_demo() -> gr.Blocks:
     app_state = AppState()
+    if app_state.config.model_lifecycle == "single_a100_80gb":
+        logging.getLogger("text2tactilegraphics.generation.models").setLevel(logging.DEBUG)
 
     with gr.Blocks(title="Text-based Tactile Graphics Generation") as blocks:
         gr.Markdown(
@@ -149,11 +161,13 @@ def _build_save_settings(app_state: AppState) -> None:
 
 def _build_runtime_settings(app_state: AppState) -> None:
     """VRAM / MoGe / GPU-assignment settings row."""
+    single_a100 = app_state.config.model_lifecycle == "single_a100_80gb"
     with gr.Row():
         vram_mode = gr.Radio(
             choices=[("48GB", "48gb"), ("80GB", "80gb")],
             value=app_state.config.vram_mode,
             label="Qwen VRAM mode",
+            interactive=not single_a100,
             info="Affects weight offloading/data type settings; must be set before first loading Qwen",
             scale=1,
         )
@@ -175,6 +189,7 @@ def _build_runtime_settings(app_state: AppState) -> None:
         return gr.Number(
             label=label,
             value=value,
+            interactive=not single_a100,
             precision=0,
             minimum=0,
             maximum=max_gpu_id,
@@ -203,6 +218,10 @@ def _build_runtime_settings(app_state: AppState) -> None:
         g_qwen: float,
         g_tile: float,
     ) -> None:
+        if single_a100 and (
+            vram != "80gb" or any((g_base_edit, g_moge, g_sam, g_qwen, g_tile))
+        ):
+            raise gr.Error("single_a100_80gb requires true 80gb mode and GPU 0")
         app_state.config.vram_mode = vram
         app_state.config.geometry_type = geometry_type
         app_state.config.gpu_assignments.update(
@@ -345,6 +364,7 @@ def _wire_stage1_events(app_state: AppState, stage1: Stage1Section) -> None:
         ],
         outputs=[stage1.base_img],
         api_name="generate_base_image",
+        **_inference_queue(),
     )
 
     def _set_style_prefix(value: str) -> None:
@@ -373,6 +393,7 @@ def _wire_stage1_events(app_state: AppState, stage1: Stage1Section) -> None:
         inputs=[stage1.base_img],
         outputs=[stage1.mesh_output],
         api_name="preview_base_mesh",
+        **_inference_queue(),
     )
 
 
@@ -729,6 +750,7 @@ def _wire_stage2_events(
         fn=lambda img, text: segment_with_text(img, text, app_state=app_state),
         inputs=[stage1.base_img, seg.text_seg_prompt],
         outputs=[seg.text_mask_state, seg.overlay_img],
+        **_inference_queue(),
         api_visibility="private",
     )
 
@@ -752,6 +774,7 @@ def _wire_stage2_events(
         ),
         inputs=[stage1.base_img, seg.points_state, seg.labels_state],
         outputs=[seg.click_mask_state, seg.click_seg_img],
+        **_inference_queue(),
         api_visibility="private",
     )
 
@@ -787,6 +810,7 @@ def _wire_stage2_events(
         inputs=[texture.texture_prompt, texture.steps_radio, texture.seed_num],
         outputs=[texture.texture_img],
         api_name="generate_texture_image",
+        **_inference_queue(),
     )
 
     texture.texture_img.upload(
@@ -803,6 +827,7 @@ def _wire_stage2_events(
         inputs=[texture.texture_img, texture.crop_check],
         outputs=[texture.geometry_state, texture.geometry_img],
         api_name="generate_texture_geometry",
+        **_inference_queue(),
     )
 
     # Mirror geometry map into Step 3 when it changes
@@ -851,6 +876,7 @@ def _wire_stage2_events(
         ],
         outputs=[tiling.tileable_patch_img],
         api_name="make_tileable",
+        **_inference_queue(),
     )
 
     # ------ mesh preview
@@ -872,6 +898,7 @@ def _wire_stage2_events(
         ],
         outputs=[mesh.mesh_output],
         api_name="preview_textured_mesh",
+        **_inference_queue(),
     )
 
     # ------ save segment + refresh table
@@ -1278,6 +1305,7 @@ def _wire_stage3_events(
         ],
         outputs=[output.mesh_output],
         api_name="generate_final_mesh",
+        **_inference_queue(),
     )
 
     # Reset Stage 3 state when Stage 1 image changes
@@ -1299,6 +1327,7 @@ def _wire_stage3_events(
 # =============================================================================
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     ensure_runtime_secrets(hf=True, gemini=False)
     demo = create_demo()
     demo.launch(theme=tactile_theme, css=CSS)

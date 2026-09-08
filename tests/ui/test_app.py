@@ -98,3 +98,41 @@ class TestGenerationModelRadio:
         self._clear_keys(monkeypatch)
         monkeypatch.setenv("GEMINI_API_KEY", "")
         assert self._find_model_radio(create_demo()) is None
+
+
+class TestSingleA100Policy:
+    def test_gpu_events_share_queue_and_debug_mode_is_locked(self, monkeypatch):
+        from text2tactilegraphics.config import global_config
+
+        cfg = global_config()
+        monkeypatch.setattr(cfg, "model_lifecycle", "single_a100_80gb")
+        monkeypatch.setattr(cfg, "vram_mode", "80gb")
+        monkeypatch.setenv("TEXT2TACTILEGRAPHICS_DEBUG", "1")
+        demo = create_demo()
+        queued = [
+            f for f in demo.fns.values() if f.concurrency_id == "single_a100_80gb"
+        ]
+        assert len(queued) == 9
+        assert all(f.concurrency_limit == 1 for f in queued)
+        assert {
+            "generate_base_image",
+            "preview_base_mesh",
+            "generate_texture_image",
+            "generate_texture_geometry",
+            "make_tileable",
+            "preview_textured_mesh",
+            "generate_final_mesh",
+        } <= {f.api_name for f in queued}
+        radio = next(
+            b
+            for b in demo.blocks.values()
+            if isinstance(b, gr.Radio) and b.label == "Qwen VRAM mode"
+        )
+        assert radio.value == "80gb" and radio.interactive is False
+        settings = next(
+            f for f in demo.fns.values() if f.fn.__name__ == "apply_settings"
+        )
+        with pytest.raises(gr.Error, match="true 80gb"):
+            settings.fn("48gb", "normal", 0, 0, 0, 0, 0)
+        assert cfg.vram_mode == "80gb"
+        demo.close()

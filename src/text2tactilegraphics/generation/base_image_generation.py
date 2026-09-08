@@ -10,6 +10,7 @@ from text2tactilegraphics.generation.models import (
     LoraManager,
     ModelManager,
     global_model_manager,
+    qwen_stage,
 )
 from text2tactilegraphics.generation.utils import open_rgb_image
 
@@ -99,6 +100,7 @@ class BaseImageGenerator:
             return self._generate_gemini(prompt, model)
         raise ValueError(f"Unknown model: {model!r}")
 
+    @qwen_stage("qwen_base_edit")
     def _generate_qwen_edit(
         self,
         prompt: str,

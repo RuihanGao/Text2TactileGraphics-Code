@@ -3,7 +3,10 @@
 import gc
 import logging
 import os
-from functools import cache, cached_property
+import traceback
+import weakref
+from functools import cache, cached_property, wraps
+from threading import RLock
 from typing import Any
 
 from text2tactilegraphics.config import DEFAULT_CKPT_PATHS, Config, global_config
@@ -32,6 +35,7 @@ class ModelManager:
 
     def __init__(self, config: Config | None = None) -> None:
         self.config = config or global_config()
+        self._qwen_lock = RLock()
 
     # =========================================================================
     # Qwen
@@ -277,6 +281,42 @@ class ModelManager:
         del self.__dict__[name]
         _reclaim_memory()
 
+    def release_qwen(self, name: str, owner: Any) -> None:
+        """Release generator-owned adapters before the existing cache unload.
+
+        Weak references verify that neither the pipeline nor its large components
+        survive cleanup. No device transition or additional empty_cache is used.
+        """
+        bundle = self.__dict__.get(name)
+        refs = {}
+        device = None
+        if bundle is not None:
+            pipe = bundle["pipeline"]
+            device = bundle["device"]
+            refs["pipeline"] = weakref.ref(pipe)
+            for component in ("dit", "text_encoder", "vae"):
+                model = getattr(pipe, component, None)
+                if model is not None:
+                    refs[component] = weakref.ref(model)
+            del model, pipe
+        del bundle
+        owner.__dict__.pop("loras", None)
+        self.unload_model(name)
+        retained = [key for key, ref in refs.items() if ref() is not None]
+        if device is not None:
+            import torch
+
+            if torch.cuda.is_available():
+                logger.debug(
+                    "Qwen unload %s: allocated=%.3f GiB reserved=%.3f GiB retained=%s",
+                    name,
+                    torch.cuda.memory_allocated(device) / 1024**3,
+                    torch.cuda.memory_reserved(device) / 1024**3,
+                    retained,
+                )
+        if retained:
+            raise RuntimeError(f"Qwen unload {name}: references still retain {retained}")
+
     def unload_all_models(self) -> None:
         """Unload every currently-loaded model and free GPU memory.
 
@@ -290,6 +330,34 @@ class ModelManager:
             logger.info("Unloading %s", name)
             del self.__dict__[name]
         _reclaim_memory()
+
+
+def qwen_stage(name: str):
+    """Apply the opt-in sequential lifecycle around a complete generator call."""
+    def decorate(fn):
+        @wraps(fn)
+        def wrapped(self, *args, **kwargs):
+            mm = self.mm
+            if mm.config.model_lifecycle != "single_a100_80gb":
+                return fn(self, *args, **kwargs)
+            with mm._qwen_lock:
+                mm.config.validate_model_lifecycle()
+                self.config.validate_model_lifecycle()
+                if self.config.vram_mode != "80gb":
+                    raise ValueError("single_a100_80gb requires true 80gb generator settings")
+                try:
+                    return fn(self, *args, **kwargs)
+                except BaseException as exc:
+                    # Failed inference frames can own the pipeline/latents even
+                    # after cache eviction. Preserve traceback locations, not locals.
+                    traceback.clear_frames(exc.__traceback__)
+                    raise
+                finally:
+                    mm.release_qwen(name, self)
+
+        return wrapped
+
+    return decorate
 
 
 # =============================================================================

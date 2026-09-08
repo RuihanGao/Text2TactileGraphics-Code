@@ -1,2 +1,5 @@
 results/*
 !results/PROFILE_SUMMARY.md
+
+!results/SINGLE_GPU_DEPLOYMENT_REPORT.md
+!results/APPLICATION_INTEGRATION_REPORT.md

@@ -181,3 +181,29 @@ If you find this work useful, please cite:
 
 This codebase is released with a clean Git history. All students (Ruihan Gao, Joonghyuk Shin, and Ava Pun) made substantial contributions to both the research project and code development.
 <!-- Add other Acks here -->
+
+### Single A100 80GB deployment
+
+Use the validated sequential Qwen lifecycle with the existing advanced UI:
+
+```bash
+TEXT2TACTILEGRAPHICS_MODEL_LIFECYCLE=single_a100_80gb \
+GRADIO_SERVER_NAME=0.0.0.0 GRADIO_SERVER_PORT=7860 \
+uv run --frozen gradio src/text2tactilegraphics/ui/app.py
+```
+
+This explicit policy requires true `80gb` numerical mode and all model roles on
+GPU 0. It releases the base, texture, and tiling Qwen bundles after each call,
+including generator-owned LoRA references, while retaining SAM3/MoGe. It uses the
+existing unload API and checks reclamation; it does not force CPU offload or
+change generation presets. GPU handlers share one Gradio concurrency group.
+The debug GPU/VRAM controls are locked in this policy; other advanced controls
+remain available. Lifecycle memory readings use the generation model logger at
+DEBUG level. Set `TEXT2TACTILEGRAPHICS_MODEL_LIFECYCLE=cached` (the default) to
+retain the research application's original caching/configuration behavior.
+
+This policy uses separate Qwen loads for texture and tiling. The approximately
+75-second profiling result additionally reused their compatible bundle; that
+optimization is not part of this explicit unload-after-each-stage policy.
+See `profiling/results/APPLICATION_INTEGRATION_REPORT.md` for measured application
+latency, memory, output equivalence, and remaining demo limitations.
