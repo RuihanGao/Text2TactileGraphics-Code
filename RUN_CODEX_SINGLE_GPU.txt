@@ -1,0 +1,13 @@
+Paste this entire command into the RunPod terminal.
+It starts Codex in the background and continues after the terminal disconnects.
+It disables Codex approval prompts AND the Codex sandbox; use only in this trusted RunPod container.
+
+nohup codex exec --dangerously-bypass-approvals-and-sandbox -C /workspace/Text2TactileGraphics-Code --output-last-message /workspace/Text2TactileGraphics-Code/CODEX_SINGLE_GPU_FINAL.md - < /workspace/Text2TactileGraphics-Code/CODEX_SINGLE_GPU_DEMO_HANDOFF.md > /workspace/Text2TactileGraphics-Code/CODEX_SINGLE_GPU_RUN.log 2>&1 &
+
+Watch progress (Ctrl+C stops watching, not the agent):
+
+tail -f /workspace/Text2TactileGraphics-Code/CODEX_SINGLE_GPU_RUN.log
+
+Final response will be written to CODEX_SINGLE_GPU_FINAL.md when the run finishes.
+Launch only once to avoid competing GPU tests. This command overwrites its previous log/final output.
+The agent loads the saved Gemini key privately when needed. Do not put your key in this command.

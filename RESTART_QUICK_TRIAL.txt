@@ -1,0 +1,38 @@
+Quick Trial is already running on port 8080. Its nginx proxy is on port 8081.
+Both returned HTTP 200 and the Quick Trial title when checked.
+You can use the existing UI without launching again.
+
+To stop the verified Quick Trial process and restart on the same port,
+paste this entire block into Bash. It checks process identity before stopping it.
+If the process has changed, it stops with an explanation instead.
+
+cd /workspace/Text2TactileGraphics-Code && .venv/bin/python - <<'PY' && GRADIO_SERVER_NAME=0.0.0.0 GRADIO_SERVER_PORT=8080 ./launch_quick_trial.sh
+import os
+import pathlib
+import signal
+import socket
+import time
+
+pid = 380620
+proc = pathlib.Path(f'/proc/{pid}/cmdline')
+if proc.exists():
+    args = proc.read_bytes().split(b'\0')
+    if b'text2tactilegraphics.ui.public_app' not in args:
+        raise SystemExit('Process identity changed; no process was stopped. Recheck port 8080.')
+    os.kill(pid, signal.SIGTERM)
+for _ in range(30):
+    with socket.socket() as probe:
+        probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            probe.bind(('0.0.0.0', 8080))
+        except OSError:
+            time.sleep(1)
+        else:
+            break
+else:
+    raise SystemExit('Port 8080 is still occupied; no replacement server was started.')
+PY
+
+Keep this terminal running. Use the RunPod HTTP connection for port 8081
+if it is exposed in your pod settings. External access has not been verified.
+The advanced UI on port 7860 is left alone.

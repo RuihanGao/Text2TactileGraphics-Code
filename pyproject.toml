@@ -16,6 +16,7 @@ dependencies = [
     "nvidia-nvjitlink-cu12",
     "pillow",
     "pybraille",
+    "pydantic>=2.13.4",
     "pyvista",
     "scipy",
     "sentencepiece",

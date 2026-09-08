@@ -1,0 +1,11 @@
+After saving a replacement key, restart only the Quick Trial process.
+Do not stop the advanced app on 7860 or nginx on 7861/8081.
+If Quick Trial runs in your foreground terminal, stop it with Ctrl+C there.
+Then run:
+
+cd /workspace/Text2TactileGraphics-Code
+./launch_quick_trial.sh
+
+The launcher loads and exports the private key without displaying it.
+Use the RunPod HTTP connection for port 8081 on this pod (Quick Trial title).
+An already-running Quick Trial must be stopped before binding its port again.

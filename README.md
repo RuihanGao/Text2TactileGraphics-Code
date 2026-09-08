@@ -45,6 +45,13 @@ Run the end-to-end Gradio demo with:
 uv run gradio src/text2tactilegraphics/ui/app.py
 ```
 
+### Mobile Quick Trial
+
+A separate one-prompt interface is available for phone users. See
+[Quick Trial setup and customization](QUICK_TRIAL.md) for launch instructions,
+planner configuration, and resumable intermediate editing. The advanced demo
+above remains unchanged.
+
 ### Environment variables
 
 Set the following environment variables as needed. If they are missing at app startup, you will be prompted on the
@@ -53,7 +60,7 @@ terminal.
 | Variable                    | Purpose                                                     | Default if unset                         | When required                   |
 |-----------------------------|-------------------------------------------------------------|------------------------------------------|---------------------------------|
 | `HF_TOKEN`                  | HuggingFace Hub access (gated weights, higher rate limits)  | None                                     | Always, when downloading models |
-| `GEMINI_API_KEY`            | Google Gemini API                                           | None                                     | Only when using Nano Banana     |
+| `GEMINI_API_KEY`            | Google Gemini API                                           | None                                     | Quick Trial planning or Nano Banana |
 | `TEXT2TACTILEGRAPHICS_CKPT_DIR`       | Override default location for Text2TactileGraphics custom checkpoints | `~/.cache/text2tactilegraphics/ckpt`               | Optional                        |
 | `HF_HOME`                   | Override default location for Hugging Face model weights    | `~/.cache/huggingface`                   | Optional                        |
 | `DIFFSYNTH_MODEL_BASE_PATH` | Override default location for DiffSynth model weights       | `./models` relative to the current shell | Optional                        |
