@@ -9,6 +9,58 @@ Carnegie Mellon University · Seoul National University · University of Illinoi
 [![Checkpoints](https://img.shields.io/badge/Hugging_Face-Checkpoints-yellow)](https://huggingface.co/alex4727/text2tactilegraphics_ckpt)
 [![Dataset](https://img.shields.io/badge/Hugging_Face-Dataset-yellow)](https://huggingface.co/datasets/alex4727/text2tactilegraphics_data)
 
+## ECCV Quick Trial Demo
+
+A mobile-friendly one-prompt interface accepts a natural-language description,
+automatically parses object shape, textured regions, tactile textures and Braille
+label, and returns the final 3D mesh. The collapsed Advanced/Customize workflow
+supports intermediate editing; the original research interface remains available.
+
+The validated fast path uses **2× NVIDIA A100-SXM4-80GB**, lifecycle
+`dual_a100_80gb`, and true `80gb` numerical behavior. GPU 0 keeps base-edit Qwen,
+SAM3 and MoGe resident; GPU 1 keeps the shared texture/tiling Qwen bundle resident.
+The warm-start service runs on port **8080**, with one active workflow and at most
+two pending requests (default projected-wait budget: 180 seconds).
+
+Requirements: Linux x86_64, Python **3.12** (`>=3.12,<3.13`), `uv sync --frozen`,
+released checkpoints and persistent model caches (about 100 GB in validation),
+a server-side Gemini planner credential and `HF_TOKEN` for model access/gated
+weights. The lockfile pins project 0.1.0 and PyTorch **2.11.0+cu128**; validation
+used Python 3.12.14 and CUDA runtime 12.8. The research stack below is historical;
+use the frozen lockfile for this demo.
+
+Configure `HF_HOME`, `TEXT2TACTILEGRAPHICS_CKPT_DIR`,
+`DIFFSYNTH_MODEL_BASE_PATH`, `HF_TOKEN`, and `QUICK_TRIAL_KEY_FILE`.
+The latter points to a trusted private shell file outside the repository defining
+`GEMINI_API_KEY`; the launcher requires this file even with an inherited key.
+It sets `TEXT2TACTILEGRAPHICS_MODEL_LIFECYCLE` itself. Secret values stay
+server-side and must never appear in frontend code or Git.
+
+```bash
+./launch_eccv.sh --check
+./launch_eccv.sh
+```
+
+Expected bind: **0.0.0.0:8080**. Expose internal HTTP 8080 in RunPod. Warmup may
+take several minutes: wait for `/readyz` to return HTTP 200 and `ready: true`,
+not a fixed sleep. `/healthz` reports readiness and queue state.
+For an intentional shutdown, run:
+
+```bash
+.venv/bin/python scripts/stop_eccv.py
+```
+
+The helper verifies process command and checkout identity before stopping it.
+After shutdown, `./launch_eccv.sh --single --check` and
+`./launch_eccv.sh --single` select the slower `single_a100_80gb` fallback on GPU 0.
+
+Known limits: raw exported meshes may be non-watertight; multi-region segmentation
+can be imperfect; RunPod URLs are Pod-specific unless fronted by a stable redirect;
+GPU concurrency intentionally remains one workflow at a time.
+
+Start with [ECCV_DEMO.md](ECCV_DEMO.md) for deployment and lightweight UI preview,
+and [UI_STYLING_GUIDE.md](UI_STYLING_GUIDE.md) for exact safe styling sections.
+
 ## System requirements
 
 This project has been tested on Linux x86_64 with the following stack:

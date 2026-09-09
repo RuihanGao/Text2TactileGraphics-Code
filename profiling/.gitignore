@@ -3,3 +3,9 @@ results/*
 
 !results/SINGLE_GPU_DEPLOYMENT_REPORT.md
 !results/APPLICATION_INTEGRATION_REPORT.md
+!results/eccv/
+results/eccv/**
+!results/eccv/**/
+!results/eccv/**/REPORT.md
+!results/eccv/ECCV_READINESS_REPORT.md
+!results/eccv/RECOVERY_READY_VERIFICATION.md

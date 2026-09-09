@@ -1,11 +1,15 @@
 """Mobile Quick Trial; run with python -m text2tactilegraphics.ui.public_app."""
 
+import os
+import uuid
+from contextlib import nullcontext
 from html import escape
 
 import gradio as gr
 from pydantic import ValidationError
 
 from text2tactilegraphics.generation.utils import mask_to_image
+from text2tactilegraphics.ui.admission import Admission, request_owner
 from text2tactilegraphics.ui.prompt_planner import (
     GeminiPromptPlanner,
     PlannerError,
@@ -35,12 +39,15 @@ def status_html(message):
     return f'<div role="status" aria-live="polite">{escape(message)}</div>'
 
 
-def create_demo(planner=None, pipeline=None):
+def create_demo(planner=None, pipeline=None, service=None, admission=None):
     pipeline = pipeline or QuickPipeline(planner or GeminiPromptPlanner())
+    if admission is None and os.getenv("TEXT2TACTILEGRAPHICS_POSTER_MODE") == "1":
+        admission = Admission.from_environment()
     with gr.Blocks(
         title="Text2TactileGraphics · Quick Trial", delete_cache=(3600, 86400)
     ) as demo:
         state = gr.State(QuickState())
+        ticket = gr.Textbox(value="", visible=False)
         gr.Markdown(
             "# Quick Trial\nDescribe an object and its textures. We’ll turn it into a tactile graphic."
         )
@@ -53,7 +60,48 @@ def create_demo(planner=None, pipeline=None):
         gr.Examples(
             [[text] for text in EXAMPLES], inputs=prompt, label="Try an example"
         )
-        generate = gr.Button("Generate", variant="primary", size="lg")
+        if service is not None or admission is not None:
+            service_status = gr.HTML(status_html("Service: Warming"))
+            service_timer = gr.Timer(2)
+        generate = gr.Button(
+            "Generate",
+            variant="primary",
+            size="lg",
+            interactive=service is None or service.state == "Ready",
+        )
+        if service is not None or admission is not None:
+
+            def readiness(request: gr.Request):
+                ready = service is None or service.state == "Ready"
+                owner = request_owner(request)
+                queue_state = admission.snapshot(owner) if admission else None
+                label = service.state if service else "Ready"
+                if (
+                    ready
+                    and queue_state
+                    and (
+                        queue_state["active"]
+                        or queue_state["pending"]
+                        or queue_state["scheduled"]
+                    )
+                ):
+                    label = "Busy"
+                    ahead = queue_state["jobs_ahead"]
+                    if ahead is not None:
+                        label += f" · {ahead} jobs ahead"
+                        if ahead:
+                            label += f" · about {queue_state['wait_bucket_minutes']} minute(s)"
+                notice = admission.notice(owner) if admission else ""
+                return status_html(f"Service: {label}. {notice}"), gr.Button(
+                    interactive=ready and not (admission and admission.owns(owner))
+                )
+
+            service_timer.tick(
+                readiness,
+                outputs=[service_status, generate],
+                queue=False,
+                api_visibility="private",
+            )
         status = gr.HTML(
             status_html("Describe an object to begin."),
             elem_id="quick-status",
@@ -191,6 +239,10 @@ def create_demo(planner=None, pipeline=None):
                         images.append((img, f"Region {i + 1}: {label}"))
             result = {
                 state: s,
+                generate: gr.Button(
+                    interactive=s.status == "Done"
+                    or s.status.startswith("Could not finish:")
+                ),
                 status: status_html(s.status),
                 preview: gr.Image(value=s.base_image, visible=s.base_image is not None),
                 mesh: s.final_mesh,
@@ -239,6 +291,7 @@ def create_demo(planner=None, pipeline=None):
 
         outputs = [
             state,
+            generate,
             status,
             preview,
             mesh,
@@ -277,13 +330,37 @@ def create_demo(planner=None, pipeline=None):
                     "Generation stopped. Completed intermediate results are available below."
                 )
 
-        def start(text):
+        def start(text, token="", request: gr.Request = None):
             # A new Generate request starts an isolated session artifact graph.
             s = QuickState()
-            yield from stream(s, 0, pipeline.generate(s, text))
 
-        def edit(s, index, shape_text, rows, label, action, image, *values):
             def work():
+                if service is not None:
+                    service.require_ready()
+                with (
+                    admission.run(token, request_owner(request))
+                    if admission
+                    else nullcontext()
+                ):
+                    yield from pipeline.generate(s, text)
+
+            yield from stream(s, 0, work())
+
+        def edit(
+            token,
+            request: gr.Request,
+            s,
+            index,
+            shape_text,
+            rows,
+            label,
+            action,
+            image,
+            *values,
+        ):
+            def work():
+                if service is not None:
+                    service.require_ready()
                 s.status = "Applying edits"
                 if s.plan is None:
                     raise ValueError("Generate a plan first.")
@@ -322,7 +399,15 @@ def create_demo(planner=None, pipeline=None):
                     s.invalidate(action, None if action in ("base", "mesh") else index)
                 yield from pipeline.resume(s)
 
-            yield from stream(s, index, work())
+            def admitted_work():
+                with (
+                    admission.run(token, request_owner(request))
+                    if admission
+                    else nullcontext()
+                ):
+                    yield from work()
+
+            yield from stream(s, index, admitted_work())
 
         queue = {
             "concurrency_id": "quick_trial",
@@ -330,22 +415,42 @@ def create_demo(planner=None, pipeline=None):
             "api_visibility": "private",
             "trigger_mode": "once",
         }
-        generate.click(start, inputs=prompt, outputs=outputs, **queue)
-        inputs = [state, selected, shape, regions, braille]
+
+        def reserve(request: gr.Request):
+            try:
+                if service is not None:
+                    service.require_ready()
+                token = admission.reserve(request_owner(request))
+                return token, gr.Button(interactive=False)
+            except ValueError as exc:
+                raise gr.Error(str(exc), title="Live demo busy") from None
+
+        def bind(button, fn, inputs):
+            if admission is None:
+                return button.click(fn, inputs=inputs, outputs=outputs, **queue)
+            accepted = button.click(
+                reserve,
+                outputs=[ticket, generate],
+                queue=False,
+                api_visibility="private",
+                trigger_mode="once",
+            )
+            return accepted.success(fn, inputs=inputs, outputs=outputs, **queue)
+
+        bind(generate, start, [prompt, ticket])
+        inputs = [ticket, state, selected, shape, regions, braille]
         # Every GPU action uses the same queue across sessions and stages.
-        apply.click(
+        bind(
+            apply,
             edit,
             inputs=inputs
             + [gr.State("apply"), gr.State(None)]
             + list(settings.values()),
-            outputs=outputs,
-            **queue,
         )
-        rerun.click(
+        bind(
+            rerun,
             edit,
             inputs=inputs + [stage, gr.State(None)] + list(settings.values()),
-            outputs=outputs,
-            **queue,
         )
         for button, kind, component in [
             (use_base, "base", base),
@@ -354,13 +459,12 @@ def create_demo(planner=None, pipeline=None):
             (use_geometry, "geometry", geometry),
             (use_tiled, "tiling", tiled),
         ]:
-            button.click(
+            bind(
+                button,
                 edit,
                 inputs=inputs
                 + [gr.State(f"upload:{kind}"), component]
                 + list(settings.values()),
-                outputs=outputs,
-                **queue,
             )
         selected.input(
             region_images,
@@ -368,8 +472,79 @@ def create_demo(planner=None, pipeline=None):
             outputs=[mask, texture, geometry, tiled],
             **queue,
         )
-    return demo.queue(max_size=16)
+    demo.poster_admission = admission
+    return demo.queue(
+        max_size=admission.max_pending + 2 if admission else 16, api_open=False
+    )
+
+
+def create_server(service, pipeline=None, admission=None):
+    """Mount diagnostics outside the Gradio inference queue."""
+    from fastapi import FastAPI
+    from fastapi.responses import JSONResponse
+
+    from text2tactilegraphics.config import get_total_gpus, global_config
+
+    demo = create_demo(service=service, pipeline=pipeline, admission=admission)
+    app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+
+    @app.middleware("http")
+    async def browser_identity(request, call_next):
+        response = await call_next(request)
+        if not request.cookies.get("eccv_client"):
+            response.set_cookie(
+                "eccv_client",
+                uuid.uuid4().hex,
+                httponly=True,
+                samesite="lax",
+                max_age=86400,
+            )
+        return response
+
+    def health():
+        return {
+            "process_alive": True,
+            "gpu_count": get_total_gpus(),
+            "lifecycle": global_config().model_lifecycle,
+            "state": service.state,
+            "ready": service.state == "Ready",
+            "queue": demo.poster_admission.snapshot()
+            if demo.poster_admission
+            else {"pending": demo._queue.get_status().queue_size},
+        }
+
+    @app.get("/healthz")
+    def alive():
+        return health()
+
+    @app.get("/readyz")
+    def ready():
+        result = health()
+        return JSONResponse(result, status_code=200 if result["ready"] else 503)
+
+    return gr.mount_gradio_app(app, demo, path="/", css=CSS, show_error=False)
 
 
 if __name__ == "__main__":
-    create_demo().launch(css=CSS)
+    import logging
+    import os
+
+    import uvicorn
+
+    from text2tactilegraphics.ui.inference_service import InferenceService
+
+    logging.basicConfig(level=logging.INFO)
+    logging.getLogger("text2tactilegraphics.geometry").setLevel(logging.WARNING)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    service = InferenceService()
+    service.start()
+    pod_id = os.environ.get("RUNPOD_POD_ID")
+    if pod_id:
+        logging.info("RunPod proxy candidate: https://%s-8080.proxy.runpod.net", pod_id)
+    uvicorn.run(
+        create_server(service),
+        host=os.getenv("GRADIO_SERVER_NAME", "0.0.0.0"),
+        port=int(os.getenv("GRADIO_SERVER_PORT", "8080")),
+        access_log=False,
+        workers=1,
+    )

@@ -91,7 +91,7 @@ def _build_gpu_assignments(default: dict[str, int]) -> dict[str, int]:
 
 # Shared `Literal` aliases used across the codebase.
 VRAMMode = Literal["48gb", "80gb"]
-ModelLifecycle = Literal["cached", "single_a100_80gb"]
+ModelLifecycle = Literal["cached", "single_a100_80gb", "dual_a100_80gb"]
 GeometryType = Literal["normal", "depth"]
 
 
@@ -235,7 +235,9 @@ class Config:
 
     # Explicit deployment policy; research configurations keep natural caching.
     model_lifecycle: ModelLifecycle = field(
-        default_factory=lambda: os.environ.get("TEXT2TACTILEGRAPHICS_MODEL_LIFECYCLE", "cached")
+        default_factory=lambda: os.environ.get(
+            "TEXT2TACTILEGRAPHICS_MODEL_LIFECYCLE", "cached"
+        )
     )
 
     # Whether to use normal or depth estimation
@@ -271,12 +273,39 @@ class Config:
     )
 
     def __post_init__(self) -> None:
+        if self.model_lifecycle == "dual_a100_80gb":
+            self.gpu_assignments = {
+                "qwen_base_edit": 0,
+                "sam3": 0,
+                "moge2": 0,
+                "qwen_texture": 1,
+                "tile_generator": 1,
+            }
         self.validate_model_lifecycle()
 
     def validate_model_lifecycle(self) -> None:
         """Reject incompatible settings instead of falling back to CPU offload."""
-        if self.model_lifecycle not in ("cached", "single_a100_80gb"):
+        if self.model_lifecycle not in ("cached", "single_a100_80gb", "dual_a100_80gb"):
             raise ValueError(f"Unknown model lifecycle: {self.model_lifecycle!r}")
+        if self.model_lifecycle == "dual_a100_80gb":
+            if self.vram_mode != "80gb":
+                raise ValueError("dual_a100_80gb requires true 80gb VRAM mode")
+            if torch.cuda.device_count() != 2 or any(
+                torch.cuda.get_device_name(i) != "NVIDIA A100-SXM4-80GB"
+                for i in range(2)
+            ):
+                raise ValueError(
+                    "dual_a100_80gb requires exactly two visible NVIDIA A100-SXM4-80GB GPUs"
+                )
+            expected = {
+                "qwen_base_edit": 0,
+                "sam3": 0,
+                "moge2": 0,
+                "qwen_texture": 1,
+                "tile_generator": 1,
+            }
+            if self.gpu_assignments != expected:
+                raise ValueError("dual_a100_80gb requires fixed explicit GPU placement")
         if self.model_lifecycle == "single_a100_80gb":
             if self.vram_mode != "80gb":
                 raise ValueError("single_a100_80gb requires true 80gb VRAM mode")

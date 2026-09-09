@@ -37,6 +37,32 @@ class ModelManager:
         self.config = config or global_config()
         self._qwen_lock = RLock()
 
+    def warmup(self) -> None:
+        """Load the dual-GPU normal route before readiness is announced."""
+        self.config.validate_model_lifecycle()
+        if self.config.model_lifecycle != "dual_a100_80gb":
+            raise ValueError("Persistent warmup requires dual_a100_80gb")
+        with self._qwen_lock:
+            from text2tactilegraphics.generation.base_image_generation import (
+                BaseImageGenerator,
+            )
+            from text2tactilegraphics.generation.texture_generation import (
+                TextureGenerator,
+            )
+
+            base = BaseImageGenerator(self, self.config)
+            base._setup_for_steps(4)
+            self._base_loras = base.loras
+            pipe = self.qwen_texture["pipeline"]
+            if not getattr(pipe.dit, "vram_management_enabled", False):
+                raise RuntimeError("Resident sharing requires unfused hotloaded LoRAs")
+            self._shared_loras = LoraManager(pipe, self.config)
+            texture = TextureGenerator(self, self.config)
+            texture.__dict__["loras"] = self._shared_loras
+            texture._setup_for_steps(4)
+            self._shared_loras.apply([])
+            _ = self.qwen_tiling, self.sam3_text, self.moge2
+
     # =========================================================================
     # Qwen
     # =========================================================================
@@ -65,6 +91,8 @@ class ModelManager:
     @cached_property
     def qwen_tiling(self) -> dict[str, Any]:
         """Qwen-Image pipeline used for seamless-tiling inpainting."""
+        if self.config.model_lifecycle == "dual_a100_80gb":
+            return self.qwen_texture
         return self._load_qwen_pipeline(
             role="tile_generator",
             dit_model_id="Qwen/Qwen-Image",
@@ -315,7 +343,9 @@ class ModelManager:
                     retained,
                 )
         if retained:
-            raise RuntimeError(f"Qwen unload {name}: references still retain {retained}")
+            raise RuntimeError(
+                f"Qwen unload {name}: references still retain {retained}"
+            )
 
     def unload_all_models(self) -> None:
         """Unload every currently-loaded model and free GPU memory.
@@ -334,17 +364,56 @@ class ModelManager:
 
 def qwen_stage(name: str):
     """Apply the opt-in sequential lifecycle around a complete generator call."""
+
     def decorate(fn):
         @wraps(fn)
         def wrapped(self, *args, **kwargs):
             mm = self.mm
+            if mm.config.model_lifecycle == "dual_a100_80gb":
+                with mm._qwen_lock:
+                    mm.config.validate_model_lifecycle()
+                    self.config.validate_model_lifecycle()
+                    if name == "qwen_base_edit":
+                        if "_base_loras" not in mm.__dict__:
+                            mm._base_loras = LoraManager(
+                                mm.qwen_base_edit["pipeline"], mm.config
+                            )
+                        self.__dict__["loras"] = mm._base_loras
+                    if name in ("qwen_texture", "qwen_tiling"):
+                        pipe = mm.qwen_texture["pipeline"]
+                        if not getattr(pipe.dit, "vram_management_enabled", False):
+                            raise RuntimeError(
+                                "Resident sharing requires unfused hotloaded LoRAs"
+                            )
+                        # A single authority owns adapter state across generators.
+                        manager = mm.__dict__.setdefault(
+                            "_shared_loras", LoraManager(pipe, mm.config)
+                        )
+                        if name == "qwen_tiling":
+                            manager.apply([])
+                        else:
+                            self.__dict__["loras"] = manager
+                    try:
+                        return fn(self, *args, **kwargs)
+                    except BaseException:
+                        adapter = mm.__dict__.get(
+                            "_base_loras"
+                            if name == "qwen_base_edit"
+                            else "_shared_loras"
+                        )
+                        if adapter is not None:
+                            adapter.pipeline.clear_lora()
+                            adapter._loaded_paths = ()
+                        raise
             if mm.config.model_lifecycle != "single_a100_80gb":
                 return fn(self, *args, **kwargs)
             with mm._qwen_lock:
                 mm.config.validate_model_lifecycle()
                 self.config.validate_model_lifecycle()
                 if self.config.vram_mode != "80gb":
-                    raise ValueError("single_a100_80gb requires true 80gb generator settings")
+                    raise ValueError(
+                        "single_a100_80gb requires true 80gb generator settings"
+                    )
                 try:
                     return fn(self, *args, **kwargs)
                 except BaseException as exc:

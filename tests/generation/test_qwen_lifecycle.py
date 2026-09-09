@@ -124,3 +124,51 @@ def test_calls_share_manager_lock():
         for future in futures:
             future.result(timeout=5)
     assert peak == 1
+
+
+def test_dual_requires_hardware_and_true_80gb(monkeypatch):
+    import torch
+
+    monkeypatch.setattr(torch.cuda, "device_count", lambda: 1)
+    with pytest.raises(ValueError, match="exactly two"):
+        Config(model_lifecycle="dual_a100_80gb", vram_mode="80gb")
+    with pytest.raises(ValueError, match="true 80gb"):
+        Config(model_lifecycle="dual_a100_80gb", vram_mode="48gb")
+
+
+def test_dual_shares_bundle_and_clears_adapters(monkeypatch):
+    import torch
+
+    monkeypatch.setattr(torch.cuda, "device_count", lambda: 2)
+    monkeypatch.setattr(
+        torch.cuda, "get_device_name", lambda i: "NVIDIA A100-SXM4-80GB"
+    )
+    cfg = Config(model_lifecycle="dual_a100_80gb", vram_mode="80gb")
+    assert cfg.gpu_assignments["tile_generator"] == 1
+    assert all(
+        v == "cuda:1"
+        for k, v in cfg.get_qwen_vram_config("cuda:1").items()
+        if k.endswith("device")
+    )
+    mm = ModelManager(cfg)
+    pipe = Pipeline()
+    pipe.dit.vram_management_enabled = True
+    pipe.clear_lora = lambda: None
+    mm.__dict__["qwen_texture"] = {"pipeline": pipe, "device": "cuda:1"}
+    assert mm.qwen_tiling is mm.qwen_texture
+    manager = LoraManager(pipe, cfg)
+    manager._loaded_paths = ("prior-texture",)
+    mm._shared_loras = manager
+
+    class Tiler:
+        def __init__(self):
+            self.mm = mm
+            self.config = cfg
+
+        @qwen_stage("qwen_tiling")
+        def generate(self):
+            assert manager.loaded_paths == ()
+            return "tile"
+
+    assert Tiler().generate() == "tile"
+    assert mm.qwen_texture["pipeline"] is pipe

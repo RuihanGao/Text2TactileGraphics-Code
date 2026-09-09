@@ -42,3 +42,37 @@ gradio.log
 blender-render-toolkit/config/lamp_xy_aligned_v2_render_for_method_fig.blend
 blender-render-toolkit/load/
 blender-render-toolkit/output/
+
+# Server credentials and local task/operator scratch files (never release).
+.env
+.env.*
+auth.json
+gemini.env
+.ssh/
+.codex/
+private/
+/credentials/
+/CODEX_*.md
+/CODEX_*.log
+/GEMINI_KEY_SETUP.txt
+/SAVE_GEMINI_KEY.txt
+/QUICK_TRIAL_LAUNCH.txt
+
+# Runtime output; research assets and regression fixtures remain tracked.
+*.pid
+/output-quick-trial/
+/profiling/results/**/gpu*.csv
+/profiling/results/**/events*.jsonl
+/profiling/results/**/*.log
+/profiling/results/**/screenshots/
+/profiling/results/**/generated/
+/profiling/results/**/*.glb
+/profiling/results/**/*.png
+/profiling/results/**/*.webp
+/external-validation*.json
+/external-validation*.png
+/public-demo-verification.json
+/public-demo-verification.png
+
+# Post-push local receipt: records the final SHA without a second release commit.
+/ECCV_RELEASE_HANDOFF.md

@@ -83,15 +83,20 @@ CSS = """
 
 def _inference_queue() -> dict:
     """Serialize GPU handlers across stages and sessions in single-A100 mode."""
-    if global_config().model_lifecycle == "single_a100_80gb":
-        return {"concurrency_id": "single_a100_80gb", "concurrency_limit": 1}
+    if global_config().model_lifecycle in ("single_a100_80gb", "dual_a100_80gb"):
+        return {
+            "concurrency_id": global_config().model_lifecycle,
+            "concurrency_limit": 1,
+        }
     return {}
 
 
 def create_demo() -> gr.Blocks:
     app_state = AppState()
     if app_state.config.model_lifecycle == "single_a100_80gb":
-        logging.getLogger("text2tactilegraphics.generation.models").setLevel(logging.DEBUG)
+        logging.getLogger("text2tactilegraphics.generation.models").setLevel(
+            logging.DEBUG
+        )
 
     with gr.Blocks(title="Text-based Tactile Graphics Generation") as blocks:
         gr.Markdown(
@@ -162,12 +167,13 @@ def _build_save_settings(app_state: AppState) -> None:
 def _build_runtime_settings(app_state: AppState) -> None:
     """VRAM / MoGe / GPU-assignment settings row."""
     single_a100 = app_state.config.model_lifecycle == "single_a100_80gb"
+    dual_a100 = app_state.config.model_lifecycle == "dual_a100_80gb"
     with gr.Row():
         vram_mode = gr.Radio(
             choices=[("48GB", "48gb"), ("80GB", "80gb")],
             value=app_state.config.vram_mode,
             label="Qwen VRAM mode",
-            interactive=not single_a100,
+            interactive=not (single_a100 or dual_a100),
             info="Affects weight offloading/data type settings; must be set before first loading Qwen",
             scale=1,
         )
@@ -189,7 +195,7 @@ def _build_runtime_settings(app_state: AppState) -> None:
         return gr.Number(
             label=label,
             value=value,
-            interactive=not single_a100,
+            interactive=not (single_a100 or dual_a100),
             precision=0,
             minimum=0,
             maximum=max_gpu_id,
@@ -222,6 +228,13 @@ def _build_runtime_settings(app_state: AppState) -> None:
             vram != "80gb" or any((g_base_edit, g_moge, g_sam, g_qwen, g_tile))
         ):
             raise gr.Error("single_a100_80gb requires true 80gb mode and GPU 0")
+        if dual_a100 and (
+            vram != "80gb"
+            or (g_base_edit, g_moge, g_sam, g_qwen, g_tile) != (0, 0, 0, 1, 1)
+        ):
+            raise gr.Error(
+                "dual_a100_80gb requires true 80gb mode and fixed GPU placement"
+            )
         app_state.config.vram_mode = vram
         app_state.config.geometry_type = geometry_type
         app_state.config.gpu_assignments.update(

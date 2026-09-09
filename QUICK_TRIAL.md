@@ -1,29 +1,34 @@
 # Quick Trial
 
-Launch the separate mobile interface using the existing project environment:
+For the ECCV poster deployment on the isolated two-GPU checkout:
 
 ```bash
-cd /workspace/Text2TactileGraphics-Code
-./launch_quick_trial.sh
+cd /workspace/Text2TactileGraphics-Code-2gpu
+./launch_eccv.sh
 ```
 
-The launcher privately loads `/workspace/private/gemini.env`, requires a nonempty
-`GEMINI_API_KEY`, selects `single_a100_80gb`, and binds explicitly to
-`0.0.0.0:8080`. It preserves inherited model caches and requires no `uv` command
-in your shell. `QUICK_TRIAL_KEY_FILE`, `GRADIO_SERVER_NAME`, and
-`GRADIO_SERVER_PORT` can override the credential path and address. It fails if
-the port is occupied; it never stops another service. Keep the launch process
-running. Saving a new key requires restarting **only Quick Trial**.
+The launcher privately loads the planner credential, validates exactly two visible
+A100-SXM4-80GB GPUs and the model caches, selects `dual_a100_80gb`, and binds to
+`0.0.0.0:8080`. The page reports **Warming** with Generate disabled until a complete
+startup warmup succeeds. Wait for `/readyz` to return HTTP 200 with `ready: true`.
+Startup cache-read times vary; do not substitute a fixed waiting period.
 
-On the validated pod, nginx port **8081 forwards to Quick Trial on 8080**.
-Use a RunPod HTTP connection exposing port 8081 (or expose 8080 directly).
-External access was not verified: the pod-ID-based 8081 URL returned 404 and
-8080 returned 403 from this environment. Local proxy access was tested.
-Port 7861 forwards to the advanced
-app on 7860; that is a different UI. Verify the page title is **Quick Trial**.
-These proxy mappings are pod configuration, not a guarantee for other pods.
-For a fresh environment, reproduce `uv.lock` with `uv sync --frozen` first;
-do not rebuild the functioning environment just because `uv` is absent from PATH.
+`./launch_eccv.sh --check` validates configuration without loading models or
+starting the server. `./launch_eccv.sh --single` selects the preserved true-80GB
+single-A100 lifecycle on GPU 0 as a slower fallback. The original single-GPU
+`launch_quick_trial.sh` remains available with `CUDA_VISIBLE_DEVICES=0`.
+`QUICK_TRIAL_KEY_FILE` overrides the private credential-file location. Cache paths
+are inherited, with the documented persistent `/workspace/model_cache` defaults.
+No credentials belong in the UI or repository.
+
+Expose **internal HTTP port 8080** in RunPod. The candidate public address is
+`https://${RUNPOD_POD_ID}-8080.proxy.runpod.net`; the application derives it at
+startup, without a hard-coded Pod ID. No nginx 8081 mapping is required.
+The operator reports external laptop and phone validation completed for the
+current deployment (2026-09-09 handoff). Earlier reports below retain their
+historical local-only scope. Repeat [operator checks](MANUAL_ACTION_REQUIRED.md)
+after a deployment change. See the [ECCV readiness report](profiling/results/eccv/ECCV_READINESS_REPORT.md)
+for measurements and the complete start/restart/fallback runbook.
 
 One prompt and **Generate** run planning, object generation, all segmentations,
 per-region texture generation, normal estimation, tiling, and the final geometry
@@ -76,8 +81,13 @@ Changing a global texture/tiling setting affects every region. Final mesh
 rebuilds rerun the existing geometry handler, including its base-depth and
 plate segmentation work; this UI does not cache inside or rewrite that handler.
 Failed runs retain completed artifacts for resume. A new **Generate** starts a
-fresh artifact graph. Session state is isolated; GPU callbacks share a serial
-queue (maximum 16 pending requests). Gradio copies served outputs into its cache
+fresh artifact graph. Session state is isolated. The ECCV launcher admits one active GPU workflow and
+at most two pending requests, rejects overload before planning, and displays a
+persistent friendly busy message. Browser-scoped admission prevents accidental
+duplicates through repeated taps or refresh. Queue limits and the 180-second wait
+budget are configurable through the launcher environment; GPU concurrency stays
+one. `/healthz` exposes readiness and queue counts without model loading. The
+research interface retains its original queue defaults when poster mode is off. Gradio copies served outputs into its cache
 and cleans that cache after a day. The existing core handler also writes source
 GLBs to the system temporary directory; operators should retain their usual
 server temporary-file cleanup policy.
@@ -92,10 +102,13 @@ The defaults match the advanced UI: Qwen edit, seed 42, 4-step base and texture,
 120, 5 mm displacement, three repeats, and a 12 cm plate with standard Braille.
 Tiled Diffusion, if selected, uses the advanced UI's 100-step setting.
 
-This branch's backend currently accepts only `cached` and `single_a100_80gb`.
-It rejects `dual_a100_80gb` during configuration. Once the backend implements
-that mode, this frontend requires no changes; dual-GPU execution cannot be
-validated on the current backend. No lifecycle implementation is changed here.
+The backend accepts `cached`, `single_a100_80gb`, and `dual_a100_80gb`.
+The dual policy keeps base-edit Qwen, SAM3 and MoGe on explicit GPU 0, and one
+compatible shared texture/tiling Qwen-Image base on explicit GPU 1. Adapter state
+is serialized and cleared before tiling; true-80GB reference outputs match
+exactly for both representative examples. No numerical mode, steps, resolution,
+checkpoint or geometry algorithm was reduced or replaced. The single-A100
+unload lifecycle and separate advanced interface remain available.
 
 ## Validation
 
