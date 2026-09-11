@@ -192,3 +192,38 @@ the live server running and does not start another server or load models.
 Historical measurements and limitations: [ECCV readiness report](profiling/results/eccv/ECCV_READINESS_REPORT.md).
 The post-push `ECCV_RELEASE_HANDOFF.md` is a local, ignored receipt with the exact
 release SHA and push outcome; collaborator instructions above ship in Git.
+
+## Prompt checks and preference logging
+
+Quick Trial uses the configured Gemini planner model for a separate all-ages
+safety decision **before** parsing the description into object/part/texture.
+Unsafe or empty descriptions display `Invalid prompt, please try again`.
+Provider failures and malformed decisions stop generation with a retry message.
+The filter also rejects all political content (including neutral/educational
+politics), all insults/name-calling (including mild or quoted insults), profanity
+and threats/incitement. Changed Customize prompt fields (including Braille) are checked before the plan
+is updated. This is an LLM text filter, not a guarantee of generated-image safety;
+uploaded image content is not moderated by this change.
+
+Every Generate/Customize button submission reaching the input callback is saved
+before queue admission, including rejected prompts and busy attempts. The default
+file is `private/user-inputs.jsonl` (gitignored). Set
+`TEXT2TACTILEGRAPHICS_INPUT_LOG` to an absolute private persistent path in production.
+Each JSONL record includes a UTC timestamp, unique submission ID, action, original
+text/customization fields and submitted settings. Uploaded images are represented
+by dimensions/mode only; image bytes, filesystem paths, cookies, IP addresses and
+credentials are not collected. Records identify submissions, not individual users.
+The UI discloses preference logging. New files use mode 0600; writes are locked
+and flushed to disk. A logging failure stops the submission. Keep this file
+outside Gradio's public/allowed paths; custom log paths must also be kept out of
+Git. Operators should arrange retention/rotation for this append-only log.
+
+Unit validation uses mocked Gemini responses and GPU handlers. A live safety-only
+check of `gemini-3.6-flash` rejected all 10 rejection examples plus four political/
+insult boundary cases, and accepted both ordinary object controls (16/16 expected
+verdicts). Local prompts, returned decisions and the exact instruction are saved
+in ignored `private/live-safety-results.json`. The check called only the safety
+provider boundary: no prompt parsing or tactile generation. This small sample
+does not establish a real-world moderation accuracy rate. No new dependencies or GPU settings are
+required. Deploying the branch requires an intentional service restart; editing
+an isolated worktree does not update the live demo.

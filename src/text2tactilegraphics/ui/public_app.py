@@ -10,8 +10,10 @@ from pydantic import ValidationError
 
 from text2tactilegraphics.generation.utils import mask_to_image
 from text2tactilegraphics.ui.admission import Admission, request_owner
+from text2tactilegraphics.ui.input_log import record_input
 from text2tactilegraphics.ui.prompt_planner import (
     GeminiPromptPlanner,
+    InvalidPromptError,
     PlannerError,
     PromptPlan,
 )
@@ -39,7 +41,10 @@ def status_html(message):
     return f'<div role="status" aria-live="polite">{escape(message)}</div>'
 
 
-def create_demo(planner=None, pipeline=None, service=None, admission=None):
+def create_demo(
+    planner=None, pipeline=None, service=None, admission=None, moderator=None
+):
+    moderator = moderator or GeminiPromptPlanner()
     pipeline = pipeline or QuickPipeline(planner or GeminiPromptPlanner())
     if admission is None and os.getenv("TEXT2TACTILEGRAPHICS_POSTER_MODE") == "1":
         admission = Admission.from_environment()
@@ -56,6 +61,10 @@ def create_demo(planner=None, pipeline=None, service=None, admission=None):
             placeholder="A dolphin with wings and avocado skin texture…",
             lines=4,
             max_length=2000,
+        )
+        gr.Markdown(
+            "Submitted prompts, customization fields and settings are logged to "
+            "understand user preferences. Please do not include personal information."
         )
         gr.Examples(
             [[text] for text in EXAMPLES], inputs=prompt, label="Try an example"
@@ -314,6 +323,10 @@ def create_demo(planner=None, pipeline=None, service=None, admission=None):
                 for current in iterator:
                     yield snapshot(current, index)
             except Exception as exc:
+                if isinstance(exc, InvalidPromptError):
+                    s.status = str(exc)
+                    yield snapshot(s, index)
+                    return
                 failed_stage = s.status
                 s.final_mesh = None
                 if isinstance(exc, PlannerError):
@@ -384,6 +397,8 @@ def create_demo(planner=None, pipeline=None, service=None, admission=None):
                     raise ValueError(
                         "Apply prompt edits before uploading a replacement."
                     )
+                if plan != s.plan:
+                    moderator.validate_prompt(plan.model_dump_json())
                 s.update_plan(plan)
                 s.update_settings(new_settings)
                 if action.startswith("upload:"):
@@ -426,9 +441,33 @@ def create_demo(planner=None, pipeline=None, service=None, admission=None):
                 raise gr.Error(str(exc), title="Live demo busy") from None
 
         def bind(button, fn, inputs):
+            def record_submission(*values):
+                if fn is start:
+                    record_input("generate", {"prompt": values[0]})
+                else:
+                    record_input(
+                        "customize",
+                        {
+                            "region_index": values[2],
+                            "shape_prompt": values[3],
+                            "regions": values[4],
+                            "braille_label": values[5],
+                            "action": values[6],
+                            "image": values[7],
+                            "settings": dict(zip(settings, values[8:])),
+                        },
+                    )
+
+            recorded = button.click(
+                record_submission,
+                inputs=inputs,
+                queue=False,
+                api_visibility="private",
+                trigger_mode="once",
+            )
             if admission is None:
-                return button.click(fn, inputs=inputs, outputs=outputs, **queue)
-            accepted = button.click(
+                return recorded.success(fn, inputs=inputs, outputs=outputs, **queue)
+            accepted = recorded.success(
                 reserve,
                 outputs=[ticket, generate],
                 queue=False,

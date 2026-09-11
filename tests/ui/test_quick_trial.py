@@ -165,7 +165,10 @@ def test_gemini_schema_contract(index, monkeypatch):
     client = Mock()
     client.__enter__ = Mock(return_value=client)
     client.__exit__ = Mock(return_value=False)
-    client.models.generate_content.return_value.text = json.dumps(PLANS[index])
+    client.models.generate_content.side_effect = [
+        Mock(text='{"safe":true}'),
+        Mock(text=json.dumps(PLANS[index])),
+    ]
     monkeypatch.setattr(genai, "Client", Mock(return_value=client))
     assert GeminiPromptPlanner().plan(EXAMPLES[index]).model_dump() == PLANS[index]
     config = client.models.generate_content.call_args.kwargs["config"]
@@ -178,13 +181,17 @@ def test_gemini_schema_contract(index, monkeypatch):
     )
     # Provider output still passes strict local validation, even if it ignores
     # JSON Schema constraints or invents properties.
-    client.models.generate_content.return_value.text = json.dumps(
-        {**PLANS[index], "unexpected": "field"}
-    )
-    with pytest.raises(RuntimeError, match="Prompt planning failed"):
+    client.models.generate_content.side_effect = [
+        Mock(text='{"safe":true}'),
+        Mock(text=json.dumps({**PLANS[index], "unexpected": "field"})),
+    ]
+    with pytest.raises(RuntimeError, match="Prompt checking or planning failed"):
         GeminiPromptPlanner().plan(EXAMPLES[index])
-    client.models.generate_content.return_value.text = '{"shape_prompt": "lamp"}'
-    with pytest.raises(RuntimeError, match="Prompt planning failed"):
+    client.models.generate_content.side_effect = [
+        Mock(text='{"safe":true}'),
+        Mock(text='{"shape_prompt": "lamp"}'),
+    ]
+    with pytest.raises(RuntimeError, match="Prompt checking or planning failed"):
         GeminiPromptPlanner().plan(EXAMPLES[index])
 
 
