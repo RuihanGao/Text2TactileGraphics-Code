@@ -25,8 +25,9 @@ from text2tactilegraphics.ui.quick_pipeline import (
 
 EXAMPLES = [
     "a dolphin with wings with an avocado skin texture.",
-    "lamp, the base of the lamp has a tree bark texture, and the lamp shade has a cloth_bag texture.",
-    "a butterfly with a woven fabric texture on its wings",
+    "a simpe lamp, the lamp base has a tree bark texture, and the lamp shade has a  cloth_bag texture.",
+    "a butterfly with a crochet texture on its wings",
+    "a canoe with embossed flower texture",
 ]
 CSS = """
 .gradio-container {max-width: 760px !important; margin: auto;}
